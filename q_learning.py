@@ -54,7 +54,7 @@ ACTIONS = [tuple((x, y)) for x in range(-1, 2) for y in range(-1, 2) if not ((x=
 # print(ACTIONS)
 NUM_ACTIONS = len(ACTIONS)
 LAKE_GRID = grid_from_image("lake_obstacle.png")
-
+print_coords(LAKE_GRID)
 
 # Parameters for bonus q-learning algorithm from class
 H = 5000
@@ -70,7 +70,7 @@ V_table_h = np.full((NUM_STATES, H+1), 0)
 
 # Parameters for Sutton and Barto algorithm
 LEARNING_RATE = 0.9
-DISCOUNT_FACTOR = 0.8
+DISCOUNT_FACTOR = 0.95
 EPSILON = 0.3
 MAX_STEPS = 20000
 
@@ -209,10 +209,7 @@ def get_reward_and_new_state_with_velocity(state: list, action_idx: int, noise=0
     state[0] += action[0]
     state[1] += action[1]
 
-    # give a reward for getting to the terminal state, maybe it should be 
-    # penalized for velocity???
-    if state[0] == TARGET_LOCATION[0] and state[1] == TARGET_LOCATION[1]:
-        return 0, state
+   
     # the more velocity you have the smaller your cost is
     # return -200, state
     factor = 1
@@ -221,6 +218,10 @@ def get_reward_and_new_state_with_velocity(state: list, action_idx: int, noise=0
     if(abs(action[0])==1 and abs(action[1])==1):
         factor = 1.41
 
+    # give a reward for getting to the terminal state, maybe it should be 
+    # penalized for velocity???
+    if state[0] == TARGET_LOCATION[0] and state[1] == TARGET_LOCATION[1]:
+        return 0, state
 
 
     return (-factor/(POLAR_DIAGRAM_VELOCITIES[angle])), state
@@ -311,7 +312,7 @@ def sutton_and_barto_alg():
 
             action_idx, q = eps_greedy_policy(state=location)
 
-            reward, new_location = get_reward_and_new_state_dense(state=location, action_idx=action_idx, noise=0)
+            reward, new_location = get_reward_and_new_state_dense(state=location, action_idx=action_idx, noise=0.05)
 
             _, q_prime = choose_action_for_max_q(state=new_location)
             Q_table[get_state_index(location)][action_idx] = q + LEARNING_RATE * (reward + DISCOUNT_FACTOR * q_prime - q)
@@ -369,6 +370,7 @@ def policy_from_value_iteration(velocity=False):
         _, action_idx = max_value_over_actions(V_table=V_table, state=location, velocity=velocity)
         print("VALUE:", _)
         reward, new_location = get_reward_and_new_state_with_velocity(state=location, action_idx=action_idx)
+
         total_reward += reward
         print(reward)
         print(new_location)
@@ -377,6 +379,15 @@ def policy_from_value_iteration(velocity=False):
         # print(reward)
         location = new_location
         if (location[0] == TARGET_LOCATION[0] and location[1] == TARGET_LOCATION[1]):
+            action = ACTIONS[action_idx]
+            angle = angle_between(action, WIND_DIRECTION)
+            factor = 1
+
+            if(abs(action[0])==1 and abs(action[1])==1):
+                factor = 1.41
+            total_reward += -factor/POLAR_DIAGRAM_VELOCITIES[angle] 
+            
+
             print("TERMINAL STATE")
             print("Time:", total_reward)
             break
@@ -406,7 +417,7 @@ def policy_from_q_learning():
 
 # policy_from_q_learning()
 
-policy_from_value_iteration(velocity=False)
+policy_from_value_iteration(velocity=True)
 
 print (time.time() - t0), "seconds process time"
 # print(Q_table[(location)])
