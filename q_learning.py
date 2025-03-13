@@ -1,6 +1,6 @@
+import time
 import numpy as np
 from create_grid_from_png import grid_from_image
-
 
 # Got these functions from here:
 # https://stackoverflow.com/questions/2827393/angles-between-two-n-dimensional-vectors-in-python
@@ -30,7 +30,7 @@ def print_coords(matrix: np.ndarray):
 
 
 np.set_printoptions(linewidth=130)
-np_random = np.random.default_rng(1000)
+np_random = np.random.default_rng()
 
 np_sim_random = np.random.default_rng()
 
@@ -44,13 +44,14 @@ POLAR_DIAGRAM_VELOCITIES = {
  angle_between((1,0),(1,0)): 2.25,
  angle_between((-1,1),(1,0)): 3,
  angle_between((1,1),(1,0)): 3,
-
 }
 
 print(POLAR_DIAGRAM_VELOCITIES)
-WIND_DIRECTION = [1,1]
+
+# print(POLAR_DIAGRAM_VELOCITIES)
+WIND_DIRECTION = [-1,-1]
 ACTIONS = [tuple((x, y)) for x in range(-1, 2) for y in range(-1, 2) if not ((x==-WIND_DIRECTION[0] and y==-WIND_DIRECTION[1]) or (x==0 and y==0))]
-print(ACTIONS)
+# print(ACTIONS)
 NUM_ACTIONS = len(ACTIONS)
 LAKE_GRID = grid_from_image("lake_obstacle.png")
 
@@ -71,13 +72,13 @@ V_table_h = np.full((NUM_STATES, H+1), 0)
 LEARNING_RATE = 0.9
 DISCOUNT_FACTOR = 0.8
 EPSILON = 0.3
-MAX_STEPS = 100000
+MAX_STEPS = 20000
 
 
 
-
+t0 = time.time()
 # Set up data structures for learning
-Q_table = np.zeros((NUM_STATES, NUM_ACTIONS))
+Q_table = np_random.random((NUM_STATES, NUM_ACTIONS))
 REWARD_MATRIX = np.zeros((WIDTH, HEIGHT))
 
 TARGET_LOCATION = [11,5]
@@ -110,10 +111,10 @@ def v_h_func(state: list, h: int):
 
 
 
-print_coords(REWARD_MATRIX)
-print_coords(LAKE_GRID)
-print_coords(Q_table)
-print(ACTIONS)
+# print_coords(REWARD_MATRIX)
+# print_coords(LAKE_GRID)
+# print_coords(Q_table)
+# print(ACTIONS)
 # exit()
 
 
@@ -160,7 +161,6 @@ def get_action(action_idx: int, noise=0) -> tuple:
     else:
         bumped_action1 = (1, attempted_action[1])
         bumped_action2 = (-1, attempted_action[1])
-    
     action = np_sim_random.choice([bumped_action1, attempted_action, bumped_action2], p=[noise/2, 1-noise, noise/2])
     return action
     
@@ -170,6 +170,9 @@ def get_reward_and_new_state_dense(state: list, action_idx: int, noise=0):
     action = get_action(action_idx, noise=noise)
 
     state = state.copy()
+
+    if LAKE_GRID[state[0]][state[1]] == 1:
+        return -1000-REWARD_MATRIX.max(), state
 
     # check to make sure action does not move state into obstacle
     if LAKE_GRID[state[0] + action[0]][state[1]+action[1]] == 1:
@@ -194,6 +197,9 @@ def get_reward_and_new_state_with_velocity(state: list, action_idx: int, noise=0
     action = get_action(action_idx, noise)
     state = state.copy()
 
+    if LAKE_GRID[state[0]][state[1]] == 1:
+        return -1000-REWARD_MATRIX.max(), state
+
      # check to make sure action does not move state into obstacle
     if LAKE_GRID[state[0] + action[0]][state[1]+action[1]] == 1:
         return -1000, state
@@ -206,10 +212,21 @@ def get_reward_and_new_state_with_velocity(state: list, action_idx: int, noise=0
     # give a reward for getting to the terminal state, maybe it should be 
     # penalized for velocity???
     if state[0] == TARGET_LOCATION[0] and state[1] == TARGET_LOCATION[1]:
-        return 30, state
+        return 0, state
     # the more velocity you have the smaller your cost is
-    return 0, state
-    # return -1/POLAR_DIAGRAM_VELOCITIES[angle], state
+    # return -200, state
+    factor = 1
+
+    # Account for longer distance in a diagonal action
+    if(abs(action[0])==1 and abs(action[1])==1):
+        factor = 1.41
+
+
+
+    return (-factor/(POLAR_DIAGRAM_VELOCITIES[angle])), state
+    # if (action[0] == -1):
+    #     return -0.6, state
+    # return -0.1, state
 
 
 
@@ -225,6 +242,8 @@ def choose_action_for_max_q_h(state: list, h, q_table_h: np.ndarray):
     indices = [i for i, x in enumerate(q) if x == max_q]
     return np_random.choice(indices), max_q
 
+
+# Not working
 def bonus_alg_from_class():
     Q_table_h = np.full((NUM_STATES, NUM_ACTIONS, H), H)
     for episode in range(0,EPISODES):
@@ -278,7 +297,6 @@ def bonus_alg_from_class():
 
 
 def sutton_and_barto_alg():
-    Q_table = np_random.random((NUM_STATES, NUM_ACTIONS))
     steps = 0
 
     while True:
@@ -293,7 +311,7 @@ def sutton_and_barto_alg():
 
             action_idx, q = eps_greedy_policy(state=location)
 
-            reward, new_location = get_reward_and_new_state_dense(state=location, action_idx=action_idx, noise=SIM_NOISE)
+            reward, new_location = get_reward_and_new_state_dense(state=location, action_idx=action_idx, noise=0)
 
             _, q_prime = choose_action_for_max_q(state=new_location)
             Q_table[get_state_index(location)][action_idx] = q + LEARNING_RATE * (reward + DISCOUNT_FACTOR * q_prime - q)
@@ -301,26 +319,98 @@ def sutton_and_barto_alg():
             location = new_location
             steps += 1
             if (location[0] == TARGET_LOCATION[0] and location[1] == TARGET_LOCATION[1]):
+                # print("TARGET LOCATION")
                 break
-        # print("RESET STATE")
+            
         # print(steps)
 
 
-bonus_alg_from_class()
-location = BEGINNING_LOCATION
+# used for update step of value iteration
+def max_value_over_actions(V_table: np.ndarray, state: list, velocity=False) -> tuple[int, int]:
+    all_value_action_pairs = []
+    for idx in range(NUM_ACTIONS):
+        if velocity:
+            reward, new_state = get_reward_and_new_state_with_velocity(state=state,action_idx=idx)
+        else:
+            reward, new_state = get_reward_and_new_state_dense(state=state, action_idx=idx)
+        all_value_action_pairs.append((reward + DISCOUNT_FACTOR * V_table[get_state_index(new_state)], idx))
+    return max(all_value_action_pairs, key= lambda k: k[0])
 
-for i in range(100):
-    action_idx, q = choose_action_for_max_q(state=location)
-    reward, new_location = get_reward_and_new_state_with_velocity(state=location, action_idx=action_idx)
-    # print(new_location)
-    LAKE_GRID[new_location[0]][new_location[1]]=8
-    print(reward)
-    location = new_location
-    if (location[0] == TARGET_LOCATION[0] and location[1] == TARGET_LOCATION[1]):
-        break
 
-print(Q_table[get_state_index(location)])
-print(ACTIONS)
+
+def value_iteration(velocity=False):
+    theta = 0.01
+    V_table = np_random.random(size=NUM_STATES)
+    V_table[get_state_index(TARGET_LOCATION)] = 0
+
+    while (True):
+        delta = 0
+        for x in range(WIDTH):
+            for y in range(HEIGHT):
+                v = V_table[get_state_index([x, y])]
+                V_table[get_state_index([x, y])] = max_value_over_actions(V_table, [x, y], velocity=velocity)[0]
+                delta = max(delta, abs(v-V_table[get_state_index([x, y])]))
+        if (delta < theta):
+            break
+    return V_table
+
+
+# sutton_and_barto_alg()
+
+
+
+def policy_from_value_iteration(velocity=False):
+    print("Value iteration")
+    V_table =value_iteration(velocity=velocity)
+    print("TAREGT VALUE", V_table[get_state_index(TARGET_LOCATION)])
+    location = BEGINNING_LOCATION
+    total_reward = 0
+    for _ in range(100):
+        _, action_idx = max_value_over_actions(V_table=V_table, state=location, velocity=velocity)
+        print("VALUE:", _)
+        reward, new_location = get_reward_and_new_state_with_velocity(state=location, action_idx=action_idx)
+        total_reward += reward
+        print(reward)
+        print(new_location)
+        # print(new_location)
+        LAKE_GRID[new_location[0]][new_location[1]]=8
+        # print(reward)
+        location = new_location
+        if (location[0] == TARGET_LOCATION[0] and location[1] == TARGET_LOCATION[1]):
+            print("TERMINAL STATE")
+            print("Time:", total_reward)
+            break
+
+
+
+
+def policy_from_q_learning():
+    print("Q-LEARNING")
+    sutton_and_barto_alg()
+    location = BEGINNING_LOCATION
+    total_reward = 0
+    for i in range(100):
+        action_idx, q = choose_action_for_max_q(state=location)
+        reward, new_location = get_reward_and_new_state_with_velocity(state=location, action_idx=action_idx)
+        total_reward += reward
+        # print(new_location)
+        LAKE_GRID[new_location[0]][new_location[1]]=8
+        # print(reward)
+        location = new_location
+        if (location[0] == TARGET_LOCATION[0] and location[1] == TARGET_LOCATION[1]):
+            print("TIME:", total_reward)
+            break
+        
+
+
+
+# policy_from_q_learning()
+
+policy_from_value_iteration(velocity=False)
+
+print (time.time() - t0), "seconds process time"
+# print(Q_table[(location)])
+# print(ACTIONS)
 print_coords(LAKE_GRID)
 
 
